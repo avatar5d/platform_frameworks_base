@@ -16,21 +16,20 @@
 
 package com.android.internal.widget;
 
-import android.content.ContentResolver;
-import android.os.SystemClock;
-import android.provider.Settings;
-import android.security.MessageDigest;
-import android.text.TextUtils;
-import android.util.Log;
-
-import com.google.android.collect.Lists;
-
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.RandomAccessFile;
+import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+
+import android.content.ContentResolver;
+import android.os.SystemClock;
+import android.provider.Settings;
+import android.text.TextUtils;
+import android.util.Log;
 
 /**
  * Utilities for the lock patten and its settings.
@@ -38,7 +37,7 @@ import java.util.List;
 public class LockPatternUtils {
 
     private static final String TAG = "LockPatternUtils";
-    
+
     private static final String LOCK_PATTERN_FILE = "/system/gesture.key";
 
     /**
@@ -74,16 +73,21 @@ public class LockPatternUtils {
      * attempt for it to be counted against the counts that affect
      * {@link #FAILED_ATTEMPTS_BEFORE_TIMEOUT} and {@link #FAILED_ATTEMPTS_BEFORE_RESET}
      */
-    public static final int MIN_PATTERN_REGISTER_FAIL = 3;    
+    public static final int MIN_PATTERN_REGISTER_FAIL = 3;
 
     private final static String LOCKOUT_PERMANENT_KEY = "lockscreen.lockedoutpermanently";
     private final static String LOCKOUT_ATTEMPT_DEADLINE = "lockscreen.lockoutattemptdeadline";
     private final static String PATTERN_EVER_CHOSEN = "lockscreen.patterneverchosen";
+    private final static String PIN_BASED_LOCKING_ENABLED = "lockscreen.pinbased";
+    private final static String PIN_CHECK_TIMEOUT = "lockscreen.pinchecktimeout";
 
+    private static final int PIN_CHECK_TIMEOUT_MIN = 500;
+    private static final int PIN_CHECK_TIMEOUT_DEFAULT = 1500;
+    
     private final ContentResolver mContentResolver;
 
     private static String sLockPatternFilename;
-    
+
     /**
      * @param contentResolver Used to look up and save settings.
      */
@@ -91,7 +95,7 @@ public class LockPatternUtils {
         mContentResolver = contentResolver;
         // Initialize the location of gesture lock file
         if (sLockPatternFilename == null) {
-            sLockPatternFilename = android.os.Environment.getDataDirectory() 
+            sLockPatternFilename = android.os.Environment.getDataDirectory()
                     .getAbsolutePath() + LOCK_PATTERN_FILE;
         }
     }
@@ -102,7 +106,7 @@ public class LockPatternUtils {
      * @param pattern The pattern to check.
      * @return Whether the pattern matchees the stored one.
      */
-    public boolean checkPattern(List<LockPatternView.Cell> pattern) {
+    public boolean checkPattern(List<LockPattern.Cell> pattern) {
         try {
             // Read all the bytes from the file
             RandomAccessFile raf = new RandomAccessFile(sLockPatternFilename, "r");
@@ -153,7 +157,7 @@ public class LockPatternUtils {
      * Save a lock pattern.
      * @param pattern The new pattern to save.
      */
-    public void saveLockPattern(List<LockPatternView.Cell> pattern) {
+    public void saveLockPattern(List<LockPattern.Cell> pattern) {
         // Compute the hash
         final byte[] hash  = LockPatternUtils.patternToHash(pattern);
         try {
@@ -181,13 +185,13 @@ public class LockPatternUtils {
      * @param string The pattern serialized with {@link #patternToString}
      * @return The pattern.
      */
-    public static List<LockPatternView.Cell> stringToPattern(String string) {
-        List<LockPatternView.Cell> result = Lists.newArrayList();
+    public static List<LockPattern.Cell> stringToPattern(String string) {
+        List<LockPattern.Cell> result = new ArrayList<LockPattern.Cell>();
 
         final byte[] bytes = string.getBytes();
         for (int i = 0; i < bytes.length; i++) {
             byte b = bytes[i];
-            result.add(LockPatternView.Cell.of(b / 3, b % 3));
+            result.add(LockPattern.Cell.of(b / 3, b % 3));
         }
         return result;
     }
@@ -197,7 +201,7 @@ public class LockPatternUtils {
      * @param pattern The pattern.
      * @return The pattern in string form.
      */
-    public static String patternToString(List<LockPatternView.Cell> pattern) {
+    public static String patternToString(List<LockPattern.Cell> pattern) {
         if (pattern == null) {
             return "";
         }
@@ -205,12 +209,12 @@ public class LockPatternUtils {
 
         byte[] res = new byte[patternSize];
         for (int i = 0; i < patternSize; i++) {
-            LockPatternView.Cell cell = pattern.get(i);
+            LockPattern.Cell cell = pattern.get(i);
             res[i] = (byte) (cell.getRow() * 3 + cell.getColumn());
         }
         return new String(res);
     }
-    
+
     /*
      * Generate an SHA-1 hash for the pattern. Not the most secure, but it is
      * at least a second level of protection. First level is that the file
@@ -218,15 +222,15 @@ public class LockPatternUtils {
      * @param pattern the gesture pattern.
      * @return the hash of the pattern in a byte array.
      */
-    static byte[] patternToHash(List<LockPatternView.Cell> pattern) {
+    static byte[] patternToHash(List<LockPattern.Cell> pattern) {
         if (pattern == null) {
             return null;
         }
-        
+
         final int patternSize = pattern.size();
         byte[] res = new byte[patternSize];
         for (int i = 0; i < patternSize; i++) {
-            LockPatternView.Cell cell = pattern.get(i);
+            LockPattern.Cell cell = pattern.get(i);
             res[i] = (byte) (cell.getRow() * 3 + cell.getColumn());
         }
         try {
@@ -274,12 +278,43 @@ public class LockPatternUtils {
     }
 
     /**
+     * Set whether PIN-based locking is enabled.
+     */
+    public void setPinLockingEnabled(boolean enabled) {
+        setBoolean(PIN_BASED_LOCKING_ENABLED, enabled);
+    }
+
+    /**
+     * @return Whether PIN-based locking is enabled.
+     */
+    public boolean isPinLockingEnabled() {
+        return getBoolean(PIN_BASED_LOCKING_ENABLED);
+    }
+
+    /**
      * Set whether tactile feedback for the pattern is enabled.
      */
     public void setTactileFeedbackEnabled(boolean enabled) {
         setBoolean(Settings.System.LOCK_PATTERN_TACTILE_FEEDBACK_ENABLED, enabled);
     }
 
+    /**
+     * @return delay when accepting patterns for the PIN lock mechanism
+     */
+    public int getPinCheckTimeout() {
+    	return Math.max(
+			PIN_CHECK_TIMEOUT_MIN,
+			getInt(PIN_CHECK_TIMEOUT, PIN_CHECK_TIMEOUT_DEFAULT));
+    }
+    
+    /**
+     * Set the timeout pin check timeout, in milliseconds
+     */
+    public void setPinCheckTimeout(int timeoutMillis) {
+    	timeoutMillis = Math.max(timeoutMillis, PIN_CHECK_TIMEOUT_MIN);
+    	setInt(PIN_CHECK_TIMEOUT, timeoutMillis);
+    }
+    
     /**
      * Set and store the lockout deadline, meaning the user can't attempt his/her unlock
      * pattern until the deadline has passed.
@@ -361,5 +396,11 @@ public class LockPatternUtils {
         android.provider.Settings.System.putLong(mContentResolver, systemSettingKey, value);
     }
 
+    private int getInt(String systemSettingKey, int def) {
+        return android.provider.Settings.System.getInt(mContentResolver, systemSettingKey, def);
+    }
 
+    private void setInt(String systemSettingKey, int value) {
+        android.provider.Settings.System.putInt(mContentResolver, systemSettingKey, value);
+    }
 }
